@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AGI to ASI — Trajectory Explorer</title>
+  <meta name="description" content="Interactive simulation dashboard for exploring the transition from Artificial General Intelligence to Artificial Superintelligence, based on arXiv:2606.12683." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ===== DESIGN TOKENS ===== */
+    :root {
+      --bg-deep:      #070a14;
+      --bg-card:      rgba(255,255,255,0.04);
+      --bg-card-hov:  rgba(255,255,255,0.07);
+      --border:       rgba(255,255,255,0.08);
+      --border-hov:   rgba(139,92,246,0.45);
+
+      --accent-1:     #8b5cf6;   /* violet */
+      --accent-2:     #06b6d4;   /* cyan   */
+      --accent-3:     #f59e0b;   /* amber  */
+      --accent-warn:  #ef4444;   /* red    */
+
+      --text-1:   #f1f5f9;
+      --text-2:   #94a3b8;
+      --text-3:   #475569;
+
+      --radius-lg: 16px;
+      --radius-md: 10px;
+      --radius-sm: 6px;
+
+      --shadow-glow: 0 0 60px rgba(139,92,246,0.12);
+      --shadow-card: 0 4px 24px rgba(0,0,0,0.4);
+    }
+
+    /* ===== RESET / BASE ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg-deep);
+      color: var(--text-1);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ===== ANIMATED BACKGROUND ===== */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 10%, rgba(139,92,246,0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 80%, rgba(6,182,212,0.08)  0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ===== GRID OVERLAY ===== */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ===== LAYOUT WRAPPER ===== */
+    .wrapper {
+      position: relative;
+      z-index: 1;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 0 24px 64px;
+    }
+
+    /* ===== HEADER ===== */
+    header {
+      padding: 40px 0 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .header-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+      background: rgba(6,182,212,0.12);
+      border: 1px solid rgba(6,182,212,0.25);
+      border-radius: 100px;
+      padding: 4px 12px;
+    }
+    .header-badge::before { content: '●'; font-size: 8px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    h1 {
+      font-size: clamp(28px, 4vw, 52px);
+      font-weight: 800;
+      line-height: 1.1;
+      background: linear-gradient(135deg, var(--text-1) 0%, var(--accent-1) 60%, var(--accent-2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-sub {
+      font-size: 14px;
+      color: var(--text-2);
+      max-width: 560px;
+      line-height: 1.6;
+    }
+
+    .header-links {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pill-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 100px;
+      font-size: 12px;
+      font-weight: 500;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      background: var(--bg-card);
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+    }
+    .pill-link:hover {
+      border-color: var(--border-hov);
+      color: var(--text-1);
+      background: var(--bg-card-hov);
+    }
+    .pill-link .icon { font-size: 14px; }
+
+    /* ===== GLASS CARD ===== */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: var(--shadow-card);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .card:hover { border-color: var(--border-hov); }
+    .card-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 16px;
+    }
+
+    /* ===== MAIN GRID ===== */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: auto auto auto;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 900px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ===== CONTROLS PANEL (Commit 3 fills this) ===== */
+    .controls-panel {
+      grid-row: 1 / 3;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ===== CHART AREA (Commit 4 fills this) ===== */
+    .chart-area {
+      padding: 24px;
+      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+    .chart-container {
+      flex: 1;
+      position: relative;
+      min-height: 340px;
+    }
+
+    /* ===== METRICS ROW (Commit 5 fills this) ===== */
+    .metrics-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 700px) {
+      .metrics-row { grid-template-columns: 1fr; }
+    }
+    .metric-card {
+      padding: 20px 22px;
+    }
+    .metric-value {
+      font-size: 28px;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1;
+      margin-bottom: 6px;
+      background: linear-gradient(90deg, var(--text-1), var(--accent-1));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .metric-label { font-size: 12px; color: var(--text-2); }
+
+    /* ===== RESEARCH AGENDA (Commit 5 fills this) ===== */
+    .agenda-panel {
+      grid-column: 1 / -1;
+      padding: 24px;
+    }
+
+    /* ===== LOADING SPINNER ===== */
+    .spinner {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent-1);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== STATUS BAR ===== */
+    #status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-2);
+      padding: 8px 0 0;
+      min-height: 28px;
+    }
+    #status-bar .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent-2);
+    }
+    #status-bar.error .dot { background: var(--accent-warn); }
+
+    /* ===== DIVIDER ===== */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 0;
+    }
+
+    /* ===== FOOTER ===== */
+    footer {
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-3);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    footer a { color: var(--accent-1); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ===== HEADER ===== -->
+  <header>
+    <div class="header-top">
+      <div>
+        <div class="header-badge">Live Simulation</div>
+        <h1>AGI → ASI<br/>Trajectory Explorer</h1>
+        <p class="header-sub">
+          Interactive simulation dashboard based on
+          <a href="https://arxiv.org/abs/2606.12683" target="_blank" style="color:var(--accent-1);text-decoration:none;">
+            Genewein et al., 2025 (arXiv:2606.12683)
+          </a>.
+          Adjust parameters and explore how different assumptions shape the path
+          from Artificial General Intelligence to Artificial Superintelligence.
+        </p>
+      </div>
+      <div class="header-links">
+        <a href="https://arxiv.org/abs/2606.12683" target="_blank" class="pill-link">
+          <span class="icon">📄</span> Paper
+        </a>
+        <a href="https://github.com/Shahip2016/AGI-to-ASI" target="_blank" class="pill-link">
+          <span class="icon">⭐</span> GitHub
+        </a>
+      </div>
+    </div>
+    <div id="status-bar">
+      <span class="dot"></span>
+      <span id="status-text">Connecting to simulation server…</span>
+    </div>
+  </header>
+
+  <!-- ===== MAIN GRID ===== -->
+  <div class="main-grid">
+
+    <!-- Controls panel (filled by JS in commit 3) -->
+    <section class="card controls-panel" id="controls-panel">
+      <div class="card-title">⚙ Parameters</div>
+      <!-- JS will inject sliders here -->
+      <div style="color:var(--text-3);font-size:13px;">Loading controls…</div>
+    </section>
+
+    <!-- Chart area (filled by JS in commit 4) -->
+    <section class="card chart-area" id="chart-area">
+      <div class="card-title">📈 Effective Compute Trajectory</div>
+      <div class="chart-container">
+        <canvas id="trajectory-chart"></canvas>
+      </div>
+    </section>
+
+    <!-- Metrics row (filled by JS in commit 5) -->
+    <div class="metrics-row" id="metrics-row" style="grid-column:2/3;">
+      <div class="card metric-card">
+        <div class="metric-value" id="metric-multiplier">—</div>
+        <div class="metric-label">Final Compute Multiplier (Smooth Scaling)</div>
+      </div>
+      <div class="card metric-card">
+        <div class="metric-value" id="metric-multiplier-hard">—</div>
+        <div class="metric-label">Final Compute Multiplier (Hard Bottlenecks)</div>
+      </div>
+      <div class="card metric-card">
+        <div class="metric-value" id="metric-caps">—</div>
+        <div class="metric-label">Capabilities Unlocked (Smooth)</div>
+      </div>
+    </div>
+
+    <!-- Research agenda (filled by JS in commit 5) -->
+    <section class="card agenda-panel" id="agenda-panel">
+      <div class="card-title">🔬 Research Agenda (§7)</div>
+      <div id="agenda-content" style="color:var(--text-3);font-size:13px;">Loading research agenda…</div>
+    </section>
+
+  </div><!-- /main-grid -->
+
+  <footer>
+    <span>AGI→ASI Trajectory Explorer · Based on <a href="https://arxiv.org/abs/2606.12683">arXiv:2606.12683</a></span>
+    <span>Backend: Flask · Viz: Chart.js · Design: Antigravity</span>
+  </footer>
+
+</div><!-- /wrapper -->
+
+<script>
+  // ============================================================
+  // GLOBAL STATE (populated by later commit JS blocks)
+  // ============================================================
+  const API_BASE = 'http://localhost:5000';
+  let trajectoryChart = null;
+  let currentData    = null;
+
+  // Utility: update status bar
+  function setStatus(msg, isError = false) {
+    const bar  = document.getElementById('status-bar');
+    const text = document.getElementById('status-text');
+    text.textContent = msg;
+    bar.classList.toggle('error', isError);
+  }
+
+  // Utility: format large numbers
+  function fmtNum(n) {
+    if (n === null || n === undefined) return '—';
+    if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T×';
+    if (n >= 1e9)  return (n / 1e9 ).toFixed(1) + 'B×';
+    if (n >= 1e6)  return (n / 1e6 ).toFixed(1) + 'M×';
+    if (n >= 1e3)  return (n / 1e3 ).toFixed(1) + 'K×';
+    return n.toFixed(2) + '×';
+  }
+
+  // ============================================================
+  // CONTROLS (commit 3 adds buildControls / getParams)
+  // ============================================================
+
+  // ============================================================
+  // CHART (commit 4 adds initChart / updateChart)
+  // ============================================================
+
+  // ============================================================
+  // API + RENDER (commit 5 adds fetchData / renderMetrics / renderAgenda)
+  // ============================================================
+
+  // ============================================================
+  // INIT
+  // ============================================================
+  async function init() {
+    setStatus('Connecting to simulation server…');
+    // Check health
+    try {
+      const r = await fetch(`${API_BASE}/api/health`);
+      if (!r.ok) throw new Error();
+      setStatus('Server connected — loading UI…');
+    } catch {
+      setStatus('⚠ Cannot reach server at localhost:5000. Run: python ui/server.py', true);
+      return;
+    }
+    buildControls();
+    initChart();
+    await fetchData();
+    await renderAgenda();
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
