@@ -666,8 +666,145 @@
   }
 
   // ============================================================
-  // API + RENDER (commit 5 adds fetchData / renderMetrics / renderAgenda)
+  // API + RENDER
   // ============================================================
+
+  async function fetchData() {
+    const btn = document.getElementById('run-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Simulating…'; }
+    setStatus('Running simulation…');
+
+    try {
+      const params = getParams();
+      const qs = new URLSearchParams(params).toString();
+      const res = await fetch(`${API_BASE}/api/scenarios?${qs}`);
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      currentData = await res.json();
+
+      updateChart(currentData);
+      renderMetrics(currentData);
+
+      const total = currentData.params?.total_growth_per_year?.toFixed(2) ?? '—';
+      setStatus(`Simulation complete · ${total}× compute growth/yr · ${new Date().toLocaleTimeString()}`);
+    } catch (e) {
+      setStatus(`Error: ${e.message}`, true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Run Simulation'; }
+    }
+  }
+
+  function renderMetrics(data) {
+    const ss = data.smooth_scaling;
+    const hb = data.hard_bottlenecks;
+
+    const multEl = document.getElementById('metric-multiplier');
+    const multHard = document.getElementById('metric-multiplier-hard');
+    const capsEl  = document.getElementById('metric-caps');
+
+    if (multEl)  multEl.textContent  = ss ? fmtNum(ss.final_compute_multiplier) : '—';
+    if (multHard) multHard.textContent = hb ? fmtNum(hb.final_compute_multiplier) : '—';
+    if (capsEl)  capsEl.textContent  = ss ? ss.capabilities_unlocked.length : '—';
+
+    // Update metric label colors based on bottleneck
+    if (hb?.bottleneck_hit) {
+      multHard?.closest('.metric-card')?.style.setProperty('--accent-local', '#ef4444');
+    }
+
+    // Render capabilities list below the metric cards
+    let capList = document.getElementById('cap-list');
+    if (!capList) {
+      capList = document.createElement('div');
+      capList.id = 'cap-list';
+      capList.style.cssText = 'grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;padding:0 2px;';
+      document.getElementById('metrics-row').insertAdjacentElement('afterend', capList);
+    }
+    capList.innerHTML = '';
+    const allCaps = new Set([...(ss?.capabilities_unlocked ?? []), ...(hb?.capabilities_unlocked ?? [])]);
+    allCaps.forEach(cap => {
+      const tag = document.createElement('span');
+      tag.style.cssText = `
+        display:inline-flex;align-items:center;gap:5px;
+        padding:4px 10px;border-radius:100px;font-size:11px;font-weight:600;
+        background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.25);
+        color:#c4b5fd;
+      `;
+      tag.textContent = '✓ ' + cap;
+      capList.appendChild(tag);
+    });
+  }
+
+  // Urgency → color map
+  const URGENCY_COLOR = { High: '#ef4444', Medium: '#f59e0b', Low: '#22c55e' };
+
+  async function renderAgenda() {
+    const content = document.getElementById('agenda-content');
+    try {
+      const res = await fetch(`${API_BASE}/api/research`);
+      if (!res.ok) throw new Error();
+      const { questions, benchmarks } = await res.json();
+
+      content.innerHTML = '';
+
+      // Questions section
+      const qTitle = document.createElement('p');
+      qTitle.style.cssText = 'font-size:12px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;';
+      qTitle.textContent = 'Open Questions';
+      content.appendChild(qTitle);
+
+      const qGrid = document.createElement('div');
+      qGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:24px;';
+      content.appendChild(qGrid);
+
+      questions.forEach(q => {
+        const card = document.createElement('details');
+        card.style.cssText = `
+          background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);
+          border-radius:10px;padding:14px 16px;cursor:pointer;
+          transition:border-color 0.2s;
+        `;
+        card.addEventListener('mouseenter', () => card.style.borderColor = 'rgba(139,92,246,0.4)');
+        card.addEventListener('mouseleave', () => card.style.borderColor = 'rgba(255,255,255,0.07)');
+
+        const col = URGENCY_COLOR[q.urgency] ?? '#94a3b8';
+        card.innerHTML = `
+          <summary style="list-style:none;display:flex;align-items:flex-start;gap:10px;font-size:13px;font-weight:600;color:#f1f5f9;line-height:1.4;outline:none;">
+            <span style="min-width:8px;height:8px;border-radius:50%;background:${col};margin-top:4px;display:inline-block;flex-shrink:0;"></span>
+            ${q.question}
+          </summary>
+          <p style="margin-top:10px;font-size:12px;color:#94a3b8;line-height:1.6;padding-left:18px;">${q.description}</p>
+          <span style="display:inline-block;margin-top:8px;margin-left:18px;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${col};background:${col}22;border-radius:100px;padding:2px 8px;">${q.urgency} urgency · ${q.category}</span>
+        `;
+        qGrid.appendChild(card);
+      });
+
+      // Benchmarks section
+      const bTitle = document.createElement('p');
+      bTitle.style.cssText = 'font-size:12px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;';
+      bTitle.textContent = 'Benchmark Needs';
+      content.appendChild(bTitle);
+
+      const bGrid = document.createElement('div');
+      bGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;';
+      content.appendChild(bGrid);
+
+      benchmarks.forEach(b => {
+        const card = document.createElement('div');
+        card.style.cssText = `
+          background:rgba(6,182,212,0.05);border:1px solid rgba(6,182,212,0.15);
+          border-radius:10px;padding:14px 16px;
+        `;
+        card.innerHTML = `
+          <div style="font-size:13px;font-weight:600;color:#f1f5f9;margin-bottom:6px;">📊 ${b.name}</div>
+          <div style="font-size:12px;color:#94a3b8;line-height:1.6;margin-bottom:8px;">${b.description}</div>
+          <div style="font-size:11px;color:#475569;line-height:1.5;border-top:1px solid rgba(255,255,255,0.06);padding-top:8px;"><strong style="color:#f59e0b;">Gap:</strong> ${b.current_gap}</div>
+        `;
+        bGrid.appendChild(card);
+      });
+
+    } catch {
+      content.textContent = 'Could not load research agenda from server.';
+    }
+  }
 
   // ============================================================
   // INIT
