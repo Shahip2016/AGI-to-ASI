@@ -540,8 +540,130 @@
   }
 
   // ============================================================
-  // CHART (commit 4 adds initChart / updateChart)
+  // CHART
   // ============================================================
+
+  const CHART_COLORS = {
+    smooth: { line: '#8b5cf6', fill: 'rgba(139,92,246,0.15)' },
+    hard:   { line: '#06b6d4', fill: 'rgba(6,182,212,0.10)'  },
+  };
+
+  function initChart() {
+    const ctx = document.getElementById('trajectory-chart').getContext('2d');
+
+    trajectoryChart = new Chart(ctx, {
+      type: 'line',
+      data: { datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 600, easing: 'easeInOutQuart' },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            labels: {
+              color: '#94a3b8',
+              font: { family: 'Inter', size: 12 },
+              usePointStyle: true,
+              pointStyleWidth: 10,
+            }
+          },
+          tooltip: {
+            backgroundColor: 'rgba(7,10,20,0.95)',
+            borderColor: 'rgba(139,92,246,0.3)',
+            borderWidth: 1,
+            titleColor: '#f1f5f9',
+            bodyColor: '#94a3b8',
+            padding: 12,
+            callbacks: {
+              label: ctx => {
+                const v = ctx.parsed.y;
+                return ` ${ctx.dataset.label}: ${fmtNum(v)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            title: { display: true, text: 'Years after AGI', color: '#475569', font: { size: 11 } },
+            ticks: { color: '#475569', font: { size: 10 } },
+            grid: { color: 'rgba(255,255,255,0.04)' },
+          },
+          y: {
+            type: 'logarithmic',
+            title: { display: true, text: 'Effective Compute (log scale)', color: '#475569', font: { size: 11 } },
+            ticks: {
+              color: '#475569',
+              font: { size: 10 },
+              callback: v => fmtNum(v),
+            },
+            grid: { color: 'rgba(255,255,255,0.04)' },
+          }
+        }
+      }
+    });
+  }
+
+  // Thin the time series to at most maxPts points
+  function thinSeries(years, values, maxPts = 200) {
+    if (years.length <= maxPts) return { years, values };
+    const step = Math.ceil(years.length / maxPts);
+    const ty = [], tv = [];
+    for (let i = 0; i < years.length; i += step) { ty.push(years[i]); tv.push(values[i]); }
+    // Always include last point
+    ty.push(years.at(-1)); tv.push(values.at(-1));
+    return { years: ty, values: tv };
+  }
+
+  function updateChart(data) {
+    if (!trajectoryChart) return;
+    const datasets = [];
+
+    ['smooth_scaling', 'hard_bottlenecks'].forEach(key => {
+      const sc = data[key];
+      if (!sc || !sc.time_series) return;
+      const color = key === 'smooth_scaling' ? CHART_COLORS.smooth : CHART_COLORS.hard;
+      const label = key === 'smooth_scaling' ? 'Smooth Scaling' : 'Hard Bottlenecks';
+
+      const { years: ty, values: tv } = thinSeries(sc.time_series.year, sc.time_series.effective_compute);
+      const points = ty.map((y, i) => ({ x: y, y: tv[i] }));
+
+      datasets.push({
+        label,
+        data: points,
+        borderColor: color.line,
+        backgroundColor: color.fill,
+        borderWidth: 2.5,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: color.line,
+        fill: true,
+        tension: 0.35,
+      });
+
+      // Bottleneck marker
+      if (sc.bottleneck_hit && sc.bottleneck_year != null) {
+        const by = sc.bottleneck_year;
+        // Interpolate the compute value at bottleneck year
+        const idx = ty.findIndex(y => y >= by);
+        const bVal = idx >= 0 ? tv[idx] : tv.at(-1);
+        datasets.push({
+          label: `⚠ ${sc.bottleneck_name || 'Bottleneck'}`,
+          data: [{ x: by, y: bVal }],
+          borderColor: '#f59e0b',
+          backgroundColor: '#f59e0b',
+          pointRadius: 8,
+          pointStyle: 'crossRot',
+          showLine: false,
+          pointHoverRadius: 10,
+        });
+      }
+    });
+
+    trajectoryChart.data.datasets = datasets;
+    trajectoryChart.update();
+  }
 
   // ============================================================
   // API + RENDER (commit 5 adds fetchData / renderMetrics / renderAgenda)
